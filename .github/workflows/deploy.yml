@@ -10,7 +10,7 @@ jobs:
   # CI - Build and Test
   build:
     name: CI - Build and Test
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
       - name: Checkout code
@@ -38,7 +38,7 @@ jobs:
   # CD - Deploy to EC2
   deploy:
     name: CD - Deploy to EC2
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: build
     if: github.ref == 'refs/heads/main'
 
@@ -46,19 +46,30 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Deploy to EC2 via SSH
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_KEY }}
-          script: |
-            cd /home/ubuntu/sampleapp_IFQ636
-            git pull origin main
-            cd backend
-            npm install
-            cd ../frontend
-            npm install
-            npm run build
-            pm2 restart backend || pm2 start backend/server.js --name backend
-            pm2 save
+      - name: Install backend dependencies
+        run: |
+          cd backend
+          npm install
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          yarn install
+
+      - name: Build frontend
+        run: |
+          cd frontend
+          CI=false yarn run build
+
+      - name: Copy build to web folder
+        run: |
+          sudo cp -r /home/ubuntu/actions-runner/_work/sampleapp_IFQ636/sampleapp_IFQ636/frontend/build/* /var/www/html/
+
+      - name: Restart backend
+        run: |
+          pm2 restart backend || pm2 start /home/ubuntu/sampleapp_IFQ636/backend/server.js --name backend
+          pm2 save
+
+      - name: Restart Nginx
+        run: |
+          sudo systemctl restart nginx
